@@ -44,26 +44,6 @@ class NapalmPlatformConfigViewSet(NetBoxModelViewSet):
             raise ServiceUnavailable(
                 f"No NAPALM driver is configured for this device's platform: {device.platform}."
             )
-
-        # Check for primary IP address from NetBox object
-        if device.primary_ip:
-            host = str(device.primary_ip.address.ip)
-        else:
-            # Raise exception for no IP address and no Name if device.name does not exist
-            if not device.name:
-                raise ServiceUnavailable(
-                    "This device does not have a primary IP address or device name to lookup configured."
-                )
-            try:
-                # Attempt to complete a DNS name resolution if no primary_ip is set
-                host = socket.gethostbyname(device.name)
-            except socket.gaierror:
-                # Name lookup failure
-                raise ServiceUnavailable(
-                    f"Name lookup failure, unable to resolve IP address for {device.name}. Please set Primary IP or "
-                    f"setup name resolution."
-                )
-
         # Check that NAPALM is installed
         try:
             import napalm
@@ -92,7 +72,8 @@ class NapalmPlatformConfigViewSet(NetBoxModelViewSet):
         napalm_methods = request.GET.getlist("method")
         response = {m: None for m in napalm_methods}
 
-        username = get_plugin_config('netbox_napalm_plugin', 'NAPALM_USERNAME')
+        hostname = get_plugin_config('netbox_napalm_plugin', 'NAPALM_HOSTNAME')
+        username = device.custom_field_data.get('napalm_username')
         password = get_plugin_config('netbox_napalm_plugin', 'NAPALM_PASSWORD')
         timeout = get_plugin_config('netbox_napalm_plugin', 'NAPALM_TIMEOUT')
         optional_args = get_plugin_config('netbox_napalm_plugin', 'NAPALM_ARGS').copy()
@@ -113,7 +94,7 @@ class NapalmPlatformConfigViewSet(NetBoxModelViewSet):
 
         # Connect to the device
         d = driver(
-            hostname=host,
+            hostname=hostname,
             username=username,
             password=password,
             timeout=timeout,
@@ -123,7 +104,7 @@ class NapalmPlatformConfigViewSet(NetBoxModelViewSet):
             d.open()
         except Exception as e:
             raise ServiceUnavailable(
-                "Error connecting to the device at {}: {}".format(host, e)
+                "Error connecting to the device at {}: {}".format(hostname, e)
             )
 
         # Validate and execute each specified NAPALM method
